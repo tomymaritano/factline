@@ -1,3 +1,6 @@
+<img width="2560" height="1280" alt="GitHub social preview — 1280×640@2x" src="https://github.com/user-attachments/assets/5346a32f-5232-4d39-b69f-dadf551a4887" />
+
+
 # Factline
 
 A public timeline for one npm package version. You paste `package@version`. Factline lines up what the public records say about that version: when it was published, whether its install hooks changed, whether the same publisher shipped several versions in the same hour, which OSV advisories name it, and whether CISA KEV lists a CVE that one of those advisories already tied to it.
