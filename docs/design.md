@@ -6,16 +6,17 @@ Two structures were compared. They are not small variations: one stores projecti
 
 ## Chosen design
 
-One process. The browser talks only to its own origin. SQLite stores projections, not upstream documents. Each reader understands one document and does not know the others. A pure function, `assembleTimeline`, is the only place that decides whether a fact exists.
+One process. The browser talks only to its own origin. SQLite stores projections, not upstream documents. Each reader understands one document and does not know the others. A pure function, `assembleTimeline`, is the only place that decides whether a per-version timeline fact exists. The name-page list is a separate pure join, `joinAdvisoryScan`. It does not decide timeline facts.
 
 ```
 GET /api/v1/timeline?name={npm name}&version={semver or dist-tag}
+GET /api/v1/advisories?name={npm name}
 GET /api/v1/recent
 ```
 
 The page is `/?name=@scope/pkg&version=1.2.3`. Scoped names stay in the query string. A dist-tag is resolved through the packument and the address is replaced with the exact version. A range (`^`, `~`, `x`, `*`, a space, or a partial version like `1.2`) is `400 invalid_version`. An unknown package or version is `404`. If the packument cannot be fetched and nothing is cached, the response is `502`. Any other upstream failure leaves that fact out. It is never rendered as zero.
 
-`GET /api/v1/recent` is this server's lookup history, at most 10 rows. It is not a feed of publishes.
+`GET /api/v1/recent` is this server's history, at most 10 distinct rows: an opened version, an opened package name, or a search submitted or refreshed at `/search`. A suggestion keystroke is not stored. Repeating one of those replaces its row and moves it to the front. It is not a feed of publishes.
 
 The response has two collections:
 
@@ -36,7 +37,9 @@ The publisher window lives in `src/domain/burst.ts`. The publisher is `_npmUser.
 
 The OSV reader owns the query response. It keeps id, published, modified, a 240-code-point summary, aliases, and the ranges and explicit versions whose package ecosystem is npm and whose name is this package. It drops `details`. Membership is OSV's answer for the queried version. Explicit versions on the fact are capped at 50; `explicitVersionCount` is the full number.
 
-The KEV rule lives only in the assembler. A KEV row is emitted when an OSV id or alias matches `^CVE-\d{4}-\d+$` and that CVE is in the catalog. `tiedBy` lists the OSV ids. The catalog is not indexed by package name, and deps.dev advisories are not read. If OSV is unavailable, KEV rows are omitted even when the catalog is loaded. If OSV named CVEs and some are absent from the loaded catalog, a notice lists those CVE ids. `dateAdded` is a calendar date. The due date stays inside the fact.
+The KEV match is `tiedCves` in `src/domain/cve.ts`, shared by the assembler and the name-page join. A KEV row is emitted when an OSV id or alias matches `^CVE-\d{4}-\d+$` and that CVE is in the catalog. On the timeline, `tiedBy` lists the OSV ids. The catalog is not indexed by package name, and deps.dev advisories are not read. If OSV is unavailable, KEV rows are omitted even when the catalog is loaded. If OSV named CVEs and some are absent from the loaded catalog, a notice lists those CVE ids. `dateAdded` is a calendar date. The due date stays inside the fact. A malicious-package record is an id that starts with `MAL-`.
+
+The name-page scan does not reinterpret ranges. `readOsvBatch` asks OSV for each version on the page and keeps ids. `readOsvVuln` loads each distinct id once. `joinAdvisoryScan` groups those ids, keeps a 240-code-point summary and aliases, and attaches a KEV row only for a CVE on that record. There is no score and no safe field on the scan document.
 
 The Scorecard reader is the only code that turns a repository field into `github.com/{owner}/{repo}`. It accepts a string or `{ url }`, strips `git+`, a fragment, and a `.git` suffix, and accepts `github:owner/repo` and `git@github.com:owner/repo`. The host must be `github.com` or `www.github.com`. The first two safe path segments are the owner and the repo. A missing field does not fall back to the packument's top-level repository, homepage, or bugs URL. A 404 is an absence notice, not a score. A network failure is a different notice. Check reasons are capped at 180 code points. A check score of `-1` stays `-1`.
 
@@ -86,4 +89,10 @@ The witness does not make `timeline(name, version)` easier for the caller. It ad
 
 Node, one process, `node:sqlite`. The isolated design was already specified as TypeScript projections, and the approved shape was one process plus a database file. No native addon. The language is recorded here so a later change is a deliberate swap, not an unmade choice.
 
-Out of this version: the changes feed, the OSV zip, BigQuery dependent names, a lockfile command, PyPI, crates.io, and the Go index.
+The page is server-rendered HTML from the same process. `GET /` is the empty document. `GET /?name=&version=` is the timeline. `GET /?name=` lists dist-tags and the newest versions from the abbreviated packument, and leads with the advisory scan for those versions. It does not assemble a timeline. `GET /api/v1/advisories?name=` returns that scan as JSON (`Cache-Control: public, max-age=60`). `GET /search?q=` and `GET /api/v1/suggest?q=` search `https://registry.npmjs.org/-/v1/search`. Suggest returns an HTML fragment for htmx. Once the typed query is at least two characters, that response sets `HX-Replace-Url` to `/search?q=`, so a refresh loads the search page instead of the empty home page. A shorter query does not change the address. Search does not call OSV. Neither search nor the name page calls `assembleTimeline`, and neither prints the registry's quality, popularity, or maintenance scores. htmx 4.0.0 is vendored at `public/htmx-4.0.0.min.js`. The JSON timeline route is unchanged.
+
+The scan is one OSV `querybatch` for the dist-tags and the newest 40 versions, then one record fetch per id. KEV is joined only when a returned record ties a CVE to a version the batch named. An empty list means OSV returned no ids for this scan. If OSV does not answer, the page says so and shows no KEV row. If the search budget is spent and there is no cached scan, the version list still renders and the advisory list is omitted. A `next_page_token` left after one follow-up marks those versions incomplete, not empty. The scan cache is in memory for the OSV window. It is not written into the per-version timeline rows.
+
+On Vercel the SQLite file is `/tmp/factline.db`. The cache and the recent-search list live with that instance. They are not a shared store.
+
+Out of this version: the changes feed, the OSV zip, BigQuery dependent names, a lockfile command, PyPI, crates.io, the Go index, and a model inside the page.

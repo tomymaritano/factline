@@ -3,7 +3,9 @@
 
 # Factline
 
-A public timeline for one npm package version. You paste `package@version`. Factline lines up what the public records say about that version: when it was published, whether its install hooks changed, whether the same publisher shipped several versions in the same hour, which OSV advisories name it, and whether CISA KEV lists a CVE that one of those advisories already tied to it.
+Everything public that happened to one npm version, in order, with sources.
+
+Search the public npm registry, pick a version, and Factline lines up what the records say: when it was published, whether its install hooks changed, whether the same publisher shipped several versions in the same hour, which OSV advisories name it, and whether CISA KEV lists a CVE that one of those advisories already tied to it.
 
 The OpenSSF Scorecard number and the public dependent count sit beside that line. They are not averaged into it. There is no score and no safe/unsafe badge.
 
@@ -13,9 +15,17 @@ npm test
 npm start
 ```
 
-Open [http://127.0.0.1:8080/?name=ms&version=2.1.3](http://127.0.0.1:8080/?name=ms&version=2.1.3).
+Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/). Search from the field, or open [http://127.0.0.1:8080/?name=ms&version=2.1.3](http://127.0.0.1:8080/?name=ms&version=2.1.3).
+
+`vercel` deploys the same server. On Vercel the SQLite cache and the recent-search list stay on that instance, under `/tmp`. They are not shared across instances. A refresh keeps `/search?q=` on that same instance.
 
 `PORT`, `HOST`, and `FACTLINE_DB` override the listen address and the SQLite file. The default database is `factline.db` in the working directory. Nothing in the database is a copy of an install script or a package tarball.
+
+## For an agent
+
+Call `GET /api/v1/advisories?name=` first. It is the advisory list for the dist-tags and the newest versions on the package page. Call `GET /api/v1/timeline?name=&version=` when one of those versions needs the publish line, the install-hook diff, the publisher window, and the readings.
+
+An empty `advisories` array means OSV returned no ids for this scan. It does not mean the package is clean. If `osv` is `unavailable`, the list was not produced and KEV is omitted. If `osv` is `omitted`, the list was not loaded. Repeat the ids, summaries, aliases, version lists, and the sentences in `notices`. Do not say safe, unsafe, patched, or recommended. Neither route returns a score.
 
 ## What a lookup does
 

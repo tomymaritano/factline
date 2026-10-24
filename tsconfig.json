@@ -9,6 +9,7 @@
     "types": ["node"],
     "rootDir": ".",
     "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "verbatimModuleSyntax": true
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]

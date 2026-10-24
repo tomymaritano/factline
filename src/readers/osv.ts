@@ -8,6 +8,65 @@ export type OsvRead =
   | { state: "ok"; advisories: OsvAdvisory[] }
   | { state: "unavailable" }
 
+export type OsvBatchRow = { version: string; ids: string[]; incomplete: boolean }
+
+export async function readOsvBatch(
+  fetcher: Fetcher,
+  name: string,
+  versions: string[],
+): Promise<{ state: "ok"; rows: OsvBatchRow[] } | { state: "unavailable" }> {
+  const rows = new Map<string, OsvBatchRow>(versions.map((version) => [version, { version, ids: [], incomplete: false }]))
+  let pending = versions.map((version) => ({ version, pageToken: "" }))
+  for (let round = 0; round < 2 && pending.length > 0; round++) {
+    const result = await fetchJson(fetcher, "https://api.osv.dev/v1/querybatch", {
+      method: "POST",
+      body: JSON.stringify({
+        queries: pending.map((item) => ({
+          package: { ecosystem: "npm", name },
+          version: item.version,
+          ...(item.pageToken ? { page_token: item.pageToken } : {}),
+        })),
+      }),
+      maxBytes: 2 * 1024 * 1024,
+    })
+    if (!result.ok || !result.body || typeof result.body !== "object") return { state: "unavailable" }
+    const results = (result.body as { results?: unknown }).results
+    if (!Array.isArray(results) || results.length !== pending.length) return { state: "unavailable" }
+    const next: Array<{ version: string; pageToken: string }> = []
+    for (let index = 0; index < pending.length; index++) {
+      const item = pending[index]
+      if (!item) return { state: "unavailable" }
+      const row = rows.get(item.version)
+      const resultRow = results[index]
+      if (!row || !resultRow || typeof resultRow !== "object") return { state: "unavailable" }
+      const vulns = (resultRow as { vulns?: unknown }).vulns
+      if (vulns !== undefined && !Array.isArray(vulns)) return { state: "unavailable" }
+      if (Array.isArray(vulns)) {
+        for (const vuln of vulns) {
+          if (!vuln || typeof vuln !== "object") continue
+          const id = (vuln as { id?: unknown }).id
+          if (typeof id === "string" && id.length > 0 && !row.ids.includes(id)) row.ids.push(id)
+        }
+      }
+      const token = (resultRow as { next_page_token?: unknown }).next_page_token
+      if (typeof token === "string" && token.length > 0) {
+        if (round === 0) next.push({ version: item.version, pageToken: token })
+        else row.incomplete = true
+      }
+    }
+    pending = next
+  }
+  return { state: "ok", rows: versions.map((version) => rows.get(version) ?? { version, ids: [], incomplete: false }) }
+}
+
+export async function readOsvVuln(fetcher: Fetcher, id: string, packageName: string): Promise<OsvAdvisory | "missing"> {
+  const result = await fetchJson(fetcher, `https://api.osv.dev/v1/vulns/${encodeURIComponent(id)}`, {
+    maxBytes: 2 * 1024 * 1024,
+  })
+  if (!result.ok) return "missing"
+  return projectAdvisory(result.body, packageName) ?? "missing"
+}
+
 export async function readOsv(fetcher: Fetcher, name: string, version: string): Promise<OsvRead> {
   const result = await fetchJson(fetcher, "https://api.osv.dev/v1/query", {
     method: "POST",

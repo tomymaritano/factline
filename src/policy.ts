@@ -9,6 +9,7 @@ export const TTL_MS = {
 
 export const LIMITS = {
   missesPerMinute: 30,
+  searchesPerMinute: 60,
   maxInFlight: 8,
   packumentBytes: 20 * 1024 * 1024,
   documentBytes: 20 * 1024 * 1024,

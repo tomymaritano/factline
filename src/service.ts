@@ -1,3 +1,5 @@
+import { createCatalog, searchBudget, type SuggestResult, type VersionsResult } from "./catalog.ts"
+import { createScanner } from "./scan.ts"
 import { assembleTimeline, type AssembleInput } from "./domain/assemble.ts"
 import { classifyVersion, validName } from "./domain/validate.ts"
 import type { ScorecardProjection, Timeline, VersionRecord } from "./domain/types.ts"
@@ -9,7 +11,7 @@ import { readKev } from "./readers/kev.ts"
 import { readOsv } from "./readers/osv.ts"
 import { readRegistry } from "./readers/registry.ts"
 import { readScorecard } from "./readers/scorecard.ts"
-import { openStore, type Store } from "./store.ts"
+import { openStore, type LookupRow, type Store } from "./store.ts"
 
 export type TimelineResult =
   | { status: 200; timeline: Timeline }
@@ -20,7 +22,10 @@ export type TimelineResult =
 
 export type FactlineService = {
   timeline: (name: string, version: string, ip: string) => Promise<TimelineResult>
-  recent: () => { name: string; version: string; lookedUpAt: string }[]
+  suggest: (query: string, ip: string) => Promise<SuggestResult>
+  versions: (name: string, ip: string) => Promise<VersionsResult>
+  rememberSearch: (query: string) => void
+  recent: () => LookupRow[]
   close: () => void
 }
 
@@ -36,12 +41,47 @@ export function createService(options: {
   const gate = new UpstreamGate(LIMITS.maxInFlight)
   const flights = new SingleFlight()
   const budget = new MissBudget(LIMITS.missesPerMinute, 60_000)
+  const searches = searchBudget()
+  const scanner = createScanner({
+    fetcher,
+    gate,
+    flights,
+    budget: searches,
+    getKev: () => store.getKev(),
+    refreshKev: (observedAt) => refreshKev({ store, fetcher, gate, flights }, observedAt, store.getKev()),
+  })
+  const catalog = createCatalog({
+    fetcher,
+    gate,
+    flights,
+    budget: searches,
+    scan: (input) => scanner.scan(input),
+  })
 
   return {
     recent: () => store.recentLookups(10),
     close: () => store.close(),
     timeline: (name, version, ip) =>
       loadTimeline({ store, fetcher, now, gate, flights, budget, name, version, ip }),
+    suggest: (query, ip) => catalog.suggest(query, ip, now().getTime()),
+    rememberSearch: (query) => {
+      const trimmed = Array.from(query.trim()).slice(0, 214).join("")
+      if (Array.from(trimmed).length < 2) return
+      store.addLookup({ kind: "search", name: "", version: "", query: trimmed, lookedUpAt: now().toISOString() })
+    },
+    versions: async (name, ip) => {
+      const result = await catalog.versions(name, ip, now().getTime())
+      if (result.status === 200) {
+        store.addLookup({
+          kind: "package",
+          name: name.trim(),
+          version: "",
+          query: "",
+          lookedUpAt: now().toISOString(),
+        })
+      }
+      return result
+    },
   }
 }
 
@@ -154,7 +194,7 @@ async function loadTimeline(ctx: {
   }
 
   const timeline = assembleTimeline(input)
-  ctx.store.addLookup(name, resolved.version, observedAt)
+  ctx.store.addLookup({ kind: "version", name, version: resolved.version, query: "", lookedUpAt: observedAt })
   return { status: 200, timeline }
 }
 

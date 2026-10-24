@@ -18,9 +18,21 @@ export type StoredScorecard =
   | { state: "present"; projection: ScorecardProjection }
   | { state: "absent"; observedAt: string; repo: string }
 
+export type LookupKind = "version" | "package" | "search"
+
 export type LookupRow = {
+  kind: LookupKind
   name: string
   version: string
+  query: string
+  lookedUpAt: string
+}
+
+export type LookupEntry = {
+  kind: LookupKind
+  name: string
+  version: string
+  query: string
   lookedUpAt: string
 }
 
@@ -38,7 +50,7 @@ export type Store = {
   getScorecard: (repo: string) => StoredScorecard | null
   putScorecardPresent: (repo: string, observedAt: string, report: Omit<ScorecardProjection, "observedAt" | "repo">) => void
   putScorecardAbsent: (repo: string, observedAt: string) => void
-  addLookup: (name: string, version: string, lookedUpAt: string) => void
+  addLookup: (entry: LookupEntry) => void
   recentLookups: (limit: number) => LookupRow[]
 }
 
@@ -111,9 +123,16 @@ export function openStore(path: string): Store {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       version TEXT NOT NULL,
-      looked_up_at TEXT NOT NULL
+      looked_up_at TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'version',
+      query TEXT NOT NULL DEFAULT ''
     );
   `)
+  const lookupColumns = new Set(
+    (db.prepare("PRAGMA table_info(lookups)").all() as Array<{ name: string }>).map((column) => column.name),
+  )
+  if (!lookupColumns.has("kind")) db.exec("ALTER TABLE lookups ADD COLUMN kind TEXT NOT NULL DEFAULT 'version'")
+  if (!lookupColumns.has("query")) db.exec("ALTER TABLE lookups ADD COLUMN query TEXT NOT NULL DEFAULT ''")
 
   return {
     close: () => db.close(),
@@ -129,16 +148,44 @@ export function openStore(path: string): Store {
     getScorecard: (repo) => readScorecard(db, repo),
     putScorecardPresent: (repo, observedAt, report) => writeScorecard(db, repo, observedAt, "present", report),
     putScorecardAbsent: (repo, observedAt) => writeScorecard(db, repo, observedAt, "absent", null),
-    addLookup: (name, version, lookedUpAt) => {
-      db.prepare("INSERT INTO lookups (name, version, looked_up_at) VALUES (?, ?, ?)").run(name, version, lookedUpAt)
-    },
+    addLookup: (entry) => rememberLookup(db, entry),
     recentLookups: (limit) =>
       db
         .prepare(
-          "SELECT name, version, looked_up_at AS lookedUpAt FROM lookups ORDER BY id DESC LIMIT ?",
+          `SELECT kind, name, version, query, looked_up_at AS lookedUpAt
+           FROM lookups
+           WHERE id IN (SELECT MAX(id) FROM lookups GROUP BY kind, name, version, query)
+           ORDER BY id DESC
+           LIMIT ?`,
         )
         .all(limit) as LookupRow[],
   }
+}
+
+function rememberLookup(db: DatabaseSync, entry: LookupEntry): void {
+  if (entry.kind !== "version" && entry.kind !== "package" && entry.kind !== "search") return
+  transaction(db, () => {
+    db.prepare("DELETE FROM lookups WHERE kind = ? AND name = ? AND version = ? AND query = ?").run(
+      entry.kind,
+      entry.name,
+      entry.version,
+      entry.query,
+    )
+    db.prepare("INSERT INTO lookups (kind, name, version, query, looked_up_at) VALUES (?, ?, ?, ?, ?)").run(
+      entry.kind,
+      entry.name,
+      entry.version,
+      entry.query,
+      entry.lookedUpAt,
+    )
+    db.exec(
+      `DELETE FROM lookups WHERE id NOT IN (
+         SELECT id FROM (
+           SELECT MAX(id) AS id FROM lookups GROUP BY kind, name, version, query ORDER BY 1 DESC LIMIT 10
+         )
+       )`,
+    )
+  })
 }
 
 function transaction(db: DatabaseSync, fn: () => void): void {

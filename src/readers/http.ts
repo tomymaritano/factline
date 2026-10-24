@@ -9,7 +9,7 @@ export type JsonResult =
 export async function fetchJson(
   fetcher: Fetcher,
   url: string,
-  init: { method?: string; body?: string; maxBytes: number },
+  init: { method?: string; body?: string; maxBytes: number; accept?: string },
 ): Promise<JsonResult> {
   const timeout = AbortSignal.timeout(LIMITS.timeoutMs)
   let response: Response
@@ -20,7 +20,7 @@ export async function fetchJson(
       redirect: "follow",
       signal: timeout,
       headers: {
-        accept: "application/json",
+        accept: init.accept ?? "application/json",
         "user-agent": "factline",
         ...(init.body ? { "content-type": "application/json" } : {}),
       },

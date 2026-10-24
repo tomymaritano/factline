@@ -1,4 +1,5 @@
 import { publisherWindow } from "./burst.ts"
+import { maliciousAdvisory, tiedCves } from "./cve.ts"
 import { diffHooks } from "./hooks.ts"
 import { selectPredecessor } from "./predecessor.ts"
 import {
@@ -16,7 +17,6 @@ import {
   type VersionRecord,
 } from "./types.ts"
 
-const CVE_ID = /^CVE-\d{4}-\d+$/
 const KEV_FEED = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 const KEV_PAGE = "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"
 
@@ -147,7 +147,7 @@ export function assembleTimeline(input: AssembleInput): Timeline {
         stale: input.osv.stale,
         timeField: time.timeField,
         modifiedAt: advisory.modified,
-        malicious: advisory.id.startsWith("MAL-"),
+        malicious: maliciousAdvisory(advisory.id),
         summary: advisory.summary,
         ranges: advisory.ranges,
         explicitVersions: advisory.explicitVersions,
@@ -373,15 +373,6 @@ function scorecardStatus(input: AssembleInput): SourceStatus {
     stale: scorecard.stale,
     state: "ok",
   }
-}
-
-function tiedCves(id: string, aliases: string[]): string[] {
-  const found = new Set<string>()
-  if (CVE_ID.test(id)) found.add(id)
-  for (const alias of aliases) {
-    if (CVE_ID.test(alias)) found.add(alias)
-  }
-  return [...found]
 }
 
 function kevInstant(dateAdded: string): string {
