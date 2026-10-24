@@ -1,0 +1,20 @@
+{
+  "name": "factline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A public timeline for one npm package version. Facts stay separate from snapshots.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

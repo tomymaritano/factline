@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Factline</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <header class="mast">
+      <p class="mark">Factline</p>
+      <p class="lane">npm · one version</p>
+    </header>
+
+    <main>
+      <h1>What happened to this version, in the order it happened.</h1>
+      <p class="lede">
+        Publish, install hooks, advisories, and KEV stay on the line. The repository score and the public dependent
+        count stay off it.
+      </p>
+
+      <form id="lookup">
+        <label>
+          Package
+          <input id="name" name="name" autocomplete="off" spellcheck="false" required placeholder="ms" />
+        </label>
+        <label>
+          Version
+          <input id="version" name="version" autocomplete="off" spellcheck="false" required placeholder="2.1.3" />
+        </label>
+        <button type="submit">Show the timeline</button>
+      </form>
+      <p class="hint">
+        <button type="button" id="example">Try ms@2.1.3</button>
+        <span>Exact versions and dist-tags. Ranges stay out. The address is the timeline.</span>
+      </p>
+      <p id="status" role="status"></p>
+
+      <section id="result" hidden>
+        <div class="subject-row">
+          <h2 id="subject"></h2>
+          <p id="generated"></p>
+        </div>
+        <ul id="notices"></ul>
+        <div class="layout">
+          <ol id="events"></ol>
+          <aside class="tray">
+            <p class="stamp">Off the timeline</p>
+            <h2>Repository and popularity</h2>
+            <p class="tray-note">Not combined with the timeline.</p>
+            <div id="readings"></div>
+          </aside>
+        </div>
+        <h2 class="sources-title">Sources</h2>
+        <ul id="sources"></ul>
+      </section>
+
+      <section class="recent-block">
+        <h2>Recent lookups on this server</h2>
+        <ul id="recent"></ul>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
